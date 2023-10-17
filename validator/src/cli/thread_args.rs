@@ -150,7 +150,10 @@ impl ThreadArg for TvuReceiveThreadsArg {
         "Number of threads (and sockets) to use for receiving shreds on the TVU port";
 
     fn default() -> usize {
-        solana_gossip::cluster_info::DEFAULT_NUM_TVU_SOCKETS.get()
+        // FIREDANCER: If the cpu count in the agave affinity is set lower
+        // than DEFAULT_NUM_TVU_SOCKETS, then use the smaller value.
+        // solana_gossip::cluster_info::DEFAULT_NUM_TVU_SOCKETS.get()
+        std::cmp::min(solana_gossip::cluster_info::DEFAULT_NUM_TVU_SOCKETS.get(), get_max_thread_count())
     }
     fn min() -> usize {
         solana_gossip::cluster_info::MINIMUM_NUM_TVU_SOCKETS.get()
