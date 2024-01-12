@@ -209,6 +209,107 @@ use {
     solana_system_program::{get_system_account_kind, SystemAccountKind},
 };
 
+/// FIREDANCER: Make sure SanitizedTransaction ABI doesn't change. This
+/// doesn't really check it properly, but it's better than nothing.
+const _CHECK_ABI: [u8; 248] = [0; std::mem::size_of::<SanitizedTransaction>()];
+
+
+#[no_mangle]
+pub extern "C" fn fd_ext_bank_sanitized_txn_load_addresess( bank: *const std::ffi::c_void, address_table_lookups: *const std::ffi::c_void, address_table_lookups_count: u64, out_data: *mut u8 ) -> i32 {
+    /* These constants must be synchronized with the C code in the bank
+       tile, and get counted directly in a metrics buffer.  Do not add
+       additional error codes without updating the tile code and
+       associated metrics. */
+    const SUCCESS: i32 = 0;
+    const ERR_SLOT_HASHES_SYSVAR_NOT_FOUND: i32 = 1;
+    const ERR_ACCOUNT_NOT_FOUND: i32 = 2;
+    const ERR_INVALID_ACCOUNT_OWNER: i32 = 3;
+    const ERR_INVALID_ACCOUNT_DATA: i32 = 4;
+    const ERR_INVALID_INDEX: i32 = 5;
+
+    let address_table_lookups = unsafe {
+        std::slice::from_raw_parts(address_table_lookups as *const solana_sdk::message::v0::MessageAddressTableLookup, address_table_lookups_count as usize)
+    };
+    
+    let bank = unsafe { &*(bank as *const Bank) };
+
+    let slot_hashes = match bank
+        .transaction_processor
+        .sysvar_cache()
+        .get_slot_hashes() {
+            Ok(slot_hashes) => slot_hashes,
+            Err(_) => return ERR_SLOT_HASHES_SYSVAR_NOT_FOUND,
+        };
+    
+    let mut writable_idx = 0;
+    let mut readonly_idx = 0;
+    for address_table_lookup in address_table_lookups {
+        let table_account = match bank.rc.accounts
+            .accounts_db
+            .load_with_fixed_root(&bank.ancestors, &address_table_lookup.account_key)
+            .map(|(account, _rent)| account) {
+                None => return ERR_ACCOUNT_NOT_FOUND,
+                Some(table_account) => table_account,
+            };
+
+        if table_account.owner() != &solana_sdk::address_lookup_table::program::id() {
+            return ERR_INVALID_ACCOUNT_OWNER;
+        }
+
+        use solana_sdk::address_lookup_table::state::AddressLookupTable;
+        let current_slot = bank.ancestors.max_slot();
+        let lookup_table = match AddressLookupTable::deserialize(table_account.data()) {
+            Ok(lookup_table) => lookup_table,
+            Err(_) => return ERR_INVALID_ACCOUNT_DATA,
+        };
+
+        let active_addresses_len = match lookup_table.get_active_addresses_len(current_slot, slot_hashes.as_ref()) {
+            Ok(active_addresses_len) => active_addresses_len,
+            Err(_) => return ERR_ACCOUNT_NOT_FOUND,
+        };
+        let active_addresses = &lookup_table.addresses[0..active_addresses_len];
+        for index in &address_table_lookup.writable_indexes {
+            if *index as usize >= active_addresses_len {
+                return ERR_INVALID_INDEX;
+            }
+            unsafe {
+                std::ptr::copy_nonoverlapping(&active_addresses[*index as usize], out_data.offset(writable_idx*32) as *mut Pubkey, 32)
+            };
+            writable_idx += 1;
+        }
+
+        for index in &address_table_lookup.readonly_indexes {
+            if *index as usize >= active_addresses_len {
+                return ERR_INVALID_INDEX;
+            }
+            unsafe {
+                std::ptr::copy_nonoverlapping(&active_addresses[*index as usize], out_data.offset((writable_idx+readonly_idx)*32) as *mut Pubkey, 32)
+            };
+            readonly_idx += 1;
+        }
+    }
+
+    return SUCCESS;
+}
+
+#[no_mangle]
+pub extern "C" fn fd_ext_bank_acquire( bank: *const std::ffi::c_void ) {
+    let bank = bank as *const Bank;
+    unsafe { Arc::increment_strong_count(bank) };
+}
+
+#[no_mangle]
+pub extern "C" fn fd_ext_bank_release( bank: *const std::ffi::c_void ) {
+    let bank = bank as *const Bank;
+    unsafe { Arc::decrement_strong_count(bank) };
+}
+
+#[no_mangle]
+pub extern "C" fn fd_ext_bank_release_thunks( load_and_execute_output: *mut std::ffi::c_void ) {
+    let load_and_execute_output: Box<LoadAndExecuteTransactionsOutput> = unsafe { Box::from_raw( load_and_execute_output as *mut LoadAndExecuteTransactionsOutput ) };
+    drop(load_and_execute_output);
+}
+
 /// params to `verify_accounts_hash`
 struct VerifyAccountsHashConfig {
     test_hash_calculation: bool,
