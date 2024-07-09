@@ -3584,9 +3584,10 @@ impl Bank {
     fn check_and_load_message_nonce_account(
         &self,
         message: &SanitizedMessage,
-        next_durable_nonce: &DurableNonce,
+        _next_durable_nonce: &DurableNonce,
     ) -> Option<(NoncePartial, nonce::state::Data)> {
-        let nonce_is_advanceable = message.recent_blockhash() != next_durable_nonce.as_hash();
+        // let nonce_is_advanceable = message.recent_blockhash() != next_durable_nonce.as_hash();
+        let nonce_is_advanceable: bool = true;
         if nonce_is_advanceable {
             self.load_message_nonce_account(message)
         } else {

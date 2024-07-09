@@ -74,7 +74,7 @@ use {
         signature::{Keypair, Signature, Signer},
         system_instruction,
         transaction::{
-            self, AddressLoader, MessageHash, SanitizedTransaction, TransactionError,
+            self, AddressLoader, MessageHash, SanitizedTransaction,
             VersionedTransaction, MAX_TX_ACCOUNT_LOCKS,
         },
     },
@@ -3694,59 +3694,59 @@ pub mod rpc_full {
                 last_valid_block_height = preflight_bank.block_height() + MAX_PROCESSING_AGE as u64;
             }
 
-            if !skip_preflight {
-                verify_transaction(&transaction, &preflight_bank.feature_set)?;
+            // if !skip_preflight {
+            //     verify_transaction(&transaction, &preflight_bank.feature_set)?;
 
-                match meta.health.check() {
-                    RpcHealthStatus::Ok => (),
-                    RpcHealthStatus::Unknown => {
-                        inc_new_counter_info!("rpc-send-tx_health-unknown", 1);
-                        return Err(RpcCustomError::NodeUnhealthy {
-                            num_slots_behind: None,
-                        }
-                        .into());
-                    }
-                    RpcHealthStatus::Behind { num_slots } => {
-                        inc_new_counter_info!("rpc-send-tx_health-behind", 1);
-                        return Err(RpcCustomError::NodeUnhealthy {
-                            num_slots_behind: Some(num_slots),
-                        }
-                        .into());
-                    }
-                }
+            //     match meta.health.check() {
+            //         RpcHealthStatus::Ok => (),
+            //         RpcHealthStatus::Unknown => {
+            //             inc_new_counter_info!("rpc-send-tx_health-unknown", 1);
+            //             return Err(RpcCustomError::NodeUnhealthy {
+            //                 num_slots_behind: None,
+            //             }
+            //             .into());
+            //         }
+            //         RpcHealthStatus::Behind { num_slots } => {
+            //             inc_new_counter_info!("rpc-send-tx_health-behind", 1);
+            //             return Err(RpcCustomError::NodeUnhealthy {
+            //                 num_slots_behind: Some(num_slots),
+            //             }
+            //             .into());
+            //         }
+            //     }
 
-                if let TransactionSimulationResult {
-                    result: Err(err),
-                    logs,
-                    post_simulation_accounts: _,
-                    units_consumed,
-                    return_data,
-                    inner_instructions: _, // Always `None` due to `enable_cpi_recording = false`
-                } = preflight_bank.simulate_transaction(&transaction, false)
-                {
-                    match err {
-                        TransactionError::BlockhashNotFound => {
-                            inc_new_counter_info!("rpc-send-tx_err-blockhash-not-found", 1);
-                        }
-                        _ => {
-                            inc_new_counter_info!("rpc-send-tx_err-other", 1);
-                        }
-                    }
-                    return Err(RpcCustomError::SendTransactionPreflightFailure {
-                        message: format!("Transaction simulation failed: {err}"),
-                        result: RpcSimulateTransactionResult {
-                            err: Some(err),
-                            logs: Some(logs),
-                            accounts: None,
-                            units_consumed: Some(units_consumed),
-                            return_data: return_data.map(|return_data| return_data.into()),
-                            inner_instructions: None,
-                            replacement_blockhash: None,
-                        },
-                    }
-                    .into());
-                }
-            }
+            //     if let TransactionSimulationResult {
+            //         result: Err(err),
+            //         logs,
+            //         post_simulation_accounts: _,
+            //         units_consumed,
+            //         return_data,
+            //         inner_instructions: _, // Always `None` due to `enable_cpi_recording = false`
+            //     } = preflight_bank.simulate_transaction(&transaction, false)
+            //     {
+            //         match err {
+            //             TransactionError::BlockhashNotFound => {
+            //                 inc_new_counter_info!("rpc-send-tx_err-blockhash-not-found", 1);
+            //             }
+            //             _ => {
+            //                 inc_new_counter_info!("rpc-send-tx_err-other", 1);
+            //             }
+            //         }
+            //         return Err(RpcCustomError::SendTransactionPreflightFailure {
+            //             message: format!("Transaction simulation failed: {err}"),
+            //             result: RpcSimulateTransactionResult {
+            //                 err: Some(err),
+            //                 logs: Some(logs),
+            //                 accounts: None,
+            //                 units_consumed: Some(units_consumed),
+            //                 return_data: return_data.map(|return_data| return_data.into()),
+            //                 inner_instructions: None,
+            //                 replacement_blockhash: None,
+            //             },
+            //         }
+            //         .into());
+            //     }
+            // }
 
             _send_transaction(
                 meta,
