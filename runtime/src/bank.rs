@@ -4498,9 +4498,10 @@ impl Bank {
     fn check_transaction_for_nonce(
         &self,
         tx: &SanitizedTransaction,
-        next_durable_nonce: &DurableNonce,
+        _next_durable_nonce: &DurableNonce,
     ) -> Option<TransactionAccount> {
-        let nonce_is_advanceable = tx.message().recent_blockhash() != next_durable_nonce.as_hash();
+        // let nonce_is_advanceable = tx.message().recent_blockhash() != next_durable_nonce.as_hash();
+        let nonce_is_advanceable: bool = true;
         if nonce_is_advanceable {
             self.check_message_for_nonce(tx.message())
         } else {
