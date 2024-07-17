@@ -215,6 +215,22 @@ const _CHECK_ABI: [u8; 248] = [0; std::mem::size_of::<SanitizedTransaction>()];
 
 
 #[no_mangle]
+pub extern "C" fn fd_ext_bank_verify_precompiles( bank: *const std::ffi::c_void, txn: *const std::ffi::c_void ) -> i32 {
+    let txn: &SanitizedTransaction = unsafe {
+        &*(txn as *const SanitizedTransaction)
+    };
+    let bank = bank as *const Bank;
+    unsafe { Arc::increment_strong_count(bank) };
+    let bank = unsafe { Arc::from_raw( bank as *const Bank ) };
+
+    match txn.verify_precompiles(&bank.feature_set) {
+        Ok(_) => 0,
+        Err(_) => -1,
+    }
+}
+
+
+#[no_mangle]
 pub extern "C" fn fd_ext_bank_sanitized_txn_load_addresess( bank: *const std::ffi::c_void, address_table_lookups: *const std::ffi::c_void, address_table_lookups_count: u64, out_data: *mut u8 ) -> i32 {
     /* These constants must be synchronized with the C code in the bank
        tile, and get counted directly in a metrics buffer.  Do not add
