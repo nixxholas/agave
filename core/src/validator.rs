@@ -1028,12 +1028,9 @@ impl Validator {
                     memory[offset+43..offset+45].copy_from_slice(&version.major.to_le_bytes());
                     memory[offset+45..offset+47].copy_from_slice(&version.minor.to_le_bytes());
                     memory[offset+47..offset+49].copy_from_slice(&version.patch.to_le_bytes());
-                    if let commit = version.commit {
-                        memory[offset+49] = 1;
-                        memory[offset+50..offset+54].copy_from_slice(&commit.to_le_bytes());
-                    } else {
-                        memory[offset+49] = 0;
-                    }
+                    let commit = version.commit;
+                    memory[offset+49] = 1;
+                    memory[offset+50..offset+54].copy_from_slice(&commit.to_le_bytes());
                     memory[offset+54..offset+58].copy_from_slice(&version.feature_set.to_le_bytes());
                 } else {
                     memory[offset+42..offset+58].fill(0);
@@ -1230,7 +1227,7 @@ impl Validator {
             let account_indexes = config.account_indexes.clone();
             let bank_forks = bank_forks.clone();
             let block_commitment_cache = block_commitment_cache.clone();
-            let firedancer_gui_thread = std::thread::spawn(move || {
+            let _firedancer_gui_thread = std::thread::spawn(move || {
                 warn!("Firedancer GUI thread started");
 
                 loop {
