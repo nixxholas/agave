@@ -1222,6 +1222,26 @@ impl Validator {
 
         }
 
+        fn firedancer_publish_balance(cluster_info: &ClusterInfo, bank_forks: &Arc<RwLock<BankForks>>, block_commitment_cache: &Arc<RwLock<BlockCommitmentCache>>) {
+            use solana_sdk::account::ReadableAccount;
+            use solana_sdk::commitment_config::CommitmentLevel;
+
+            let slot = block_commitment_cache.read().unwrap().slot_with_commitment(CommitmentLevel::Processed);
+            let bank = match bank_forks.read().unwrap().get(slot) {
+                Some(bank) => bank,
+                None => return,
+            };
+
+            let balance = bank.get_account(&cluster_info.id()).map(|account| account.lamports()).unwrap_or(0);
+
+            let mut memory: [u8; 8] = [0; 8];
+            memory[0..8].copy_from_slice(&balance.to_le_bytes());
+
+            unsafe {
+                fd_ext_plugin_publish_periodic(11, memory.as_ptr(), 8);
+            }
+        }
+
         {
             let cluster_info = cluster_info.clone();
             let account_indexes = config.account_indexes.clone();
@@ -1234,6 +1254,7 @@ impl Validator {
                     firedancer_publish_gossip_peers(&cluster_info);
                     firedancer_publish_vote_accounts(&bank_forks, &block_commitment_cache);
                     firedancer_publish_validator_info(&account_indexes, &bank_forks, &block_commitment_cache);
+                    firedancer_publish_balance(&cluster_info, &bank_forks, &block_commitment_cache);
                     std::thread::sleep(std::time::Duration::from_secs(60));
                 }
             });
