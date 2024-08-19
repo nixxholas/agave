@@ -1086,6 +1086,25 @@ impl ReplayStage {
                         last_reset_bank_descendants = vec![];
                         tpu_has_bank = false;
 
+                        // FIREDANCER: Send a fork chain notification
+                        let parents = reset_bank.parents();
+                        assert!(parents.len()<1024);
+
+                        let mut memory: [u8; 1025*8] = [0; 1025*8];
+                        memory[0..8].copy_from_slice(&parents.len().to_le_bytes());
+                        memory[8..16].copy_from_slice(&reset_bank.slot().to_le_bytes());
+
+                        for (i, parent) in parents.iter().enumerate() {
+                            memory[16 + i*8..16 + (i+1)*8].copy_from_slice(&parent.slot().to_le_bytes());
+                        }
+
+                        extern "C" {
+                            fn fd_ext_plugin_publish_replay_stage(kind: u8, data: *const u8, len: u64);
+                        }
+                        unsafe {
+                            fd_ext_plugin_publish_replay_stage(10, memory.as_ptr(), 1025*8);
+                        }
+
                         if let Some(last_voted_slot) = tower.last_voted_slot() {
                             // If the current heaviest bank is not a descendant of the last voted slot,
                             // there must be a partition
@@ -3217,14 +3236,28 @@ impl ReplayStage {
                 }
 
                 // FIREDANCER: Send a slot completed notification.
-                let mut memory: [u8; 8] = [0; 8];
+                let mut memory: [u8; 48] = [0; 48];
+
+                let total_txn_count = bank.executed_transaction_count();
+                let nonvote_txn_count = bank.non_vote_transaction_count_since_restart()
+                    .saturating_sub(bank.parent().map_or(0, |parent| parent.non_vote_transaction_count_since_restart()));
+                let failed_txn_count =  bank.transaction_error_count()
+                    .saturating_sub(bank.parent().map_or(0, |parent| parent.transaction_error_count()));
+                let compute_units = bank.read_cost_tracker().unwrap().block_cost();
+                let fees = bank.collector_fees.load(Ordering::Relaxed);
+
                 memory[0..8].copy_from_slice(&bank.slot().to_le_bytes());
+                memory[8..16].copy_from_slice(&total_txn_count.to_le_bytes());
+                memory[16..24].copy_from_slice(&nonvote_txn_count.to_le_bytes());
+                memory[24..32].copy_from_slice(&failed_txn_count.to_le_bytes());
+                memory[32..40].copy_from_slice(&compute_units.to_le_bytes());
+                memory[40..48].copy_from_slice(&fees.to_le_bytes());
 
                 extern "C" {
                     fn fd_ext_plugin_publish_replay_stage(kind: u8, data: *const u8, len: u64);
                 }
                 unsafe {
-                    fd_ext_plugin_publish_replay_stage(2, memory.as_ptr(), 8);
+                    fd_ext_plugin_publish_replay_stage(2, memory.as_ptr(), 48);
                 }
 
                 if let Some(sender) = bank_notification_sender {
