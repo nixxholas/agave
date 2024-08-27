@@ -14,6 +14,7 @@ use {
         consensus::{tower_storage::TowerStorage, Tower},
         repair::repair_service,
         validator::ValidatorStartProgress,
+        validator::VSPRwLock,
     },
     solana_geyser_plugin_manager::GeyserPluginManagerRequest,
     solana_gossip::contact_info::{ContactInfo, Protocol, SOCKET_ADDR_UNSPECIFIED},
@@ -41,7 +42,7 @@ use {
 pub struct AdminRpcRequestMetadata {
     pub rpc_addr: Option<SocketAddr>,
     pub start_time: SystemTime,
-    pub start_progress: Arc<RwLock<ValidatorStartProgress>>,
+    pub start_progress: Arc<VSPRwLock>,
     pub validator_exit: Arc<RwLock<Exit>>,
     pub authorized_voter_keypairs: Arc<RwLock<Vec<Arc<Keypair>>>>,
     pub tower_storage: Arc<dyn TowerStorage>,

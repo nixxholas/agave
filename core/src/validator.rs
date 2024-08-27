@@ -377,6 +377,87 @@ impl ValidatorConfig {
     }
 }
 
+#[derive(Default)]
+pub struct VSPRwLock {
+    inner: RwLock<ValidatorStartProgress>,
+}
+
+impl VSPRwLock {
+    pub fn new() -> Self {
+        Self {
+            inner: RwLock::new(ValidatorStartProgress::default()),
+        }
+    }
+}
+
+pub struct VSPRwLockWriteGuard<'a> {
+    inner: std::sync::RwLockWriteGuard<'a, ValidatorStartProgress>,
+}
+
+impl Drop for VSPRwLockWriteGuard<'_> {
+    fn drop(&mut self) {
+        let mut memory: [u8; 25] = [0; 25];
+        match *self.inner {
+            ValidatorStartProgress::Initializing => memory[0] = 0,
+            ValidatorStartProgress::SearchingForRpcService => memory[0] = 1,
+            ValidatorStartProgress::DownloadingSnapshot { slot, rpc_addr, progress } => {
+                memory[0] = 2;
+                memory[1] = progress;
+                memory[2..10].copy_from_slice(&slot.to_le_bytes());
+                // memory[9..17].copy_from_slice(&rpc_addr.ip().to_le_bytes());
+                // memory[17..25].copy_from_slice(&rpc_addr.port().to_le_bytes());
+            }
+            ValidatorStartProgress::CleaningBlockStore => memory[0] = 3,
+            ValidatorStartProgress::CleaningAccounts => memory[0] = 4,
+            ValidatorStartProgress::LoadingLedger => memory[0] = 5,
+            ValidatorStartProgress::ProcessingLedger { slot, max_slot } => {
+                memory[0] = 6;
+                memory[1..9].copy_from_slice(&slot.to_le_bytes());
+                memory[9..17].copy_from_slice(&max_slot.to_le_bytes());
+            }
+            ValidatorStartProgress::StartingServices => memory[0] = 7,
+            ValidatorStartProgress::Halted => memory[0] = 8,
+            ValidatorStartProgress::WaitingForSupermajority { slot, gossip_stake_percent } => {
+                memory[0] = 9;
+                memory[1..9].copy_from_slice(&slot.to_le_bytes());
+                memory[9..17].copy_from_slice(&gossip_stake_percent.to_le_bytes());
+            }
+            ValidatorStartProgress::Running => memory[0] = 10,
+        }
+        
+        extern "C" {
+            fn fd_ext_plugin_publish_start_progress(kind: u8, data: *const u8, len: u64);
+        }
+        unsafe {
+            fd_ext_plugin_publish_start_progress(12, memory.as_ptr(), 25);
+        }
+    }
+}
+
+impl std::ops::Deref for VSPRwLockWriteGuard<'_> {
+    type Target = ValidatorStartProgress;
+
+    fn deref(&self) -> &Self::Target {
+        &*self.inner
+    }
+}
+
+impl std::ops::DerefMut for VSPRwLockWriteGuard<'_> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut *self.inner
+    }
+}
+
+impl VSPRwLock {
+    pub fn write(&self) -> std::sync::LockResult<VSPRwLockWriteGuard> {
+        Ok(VSPRwLockWriteGuard { inner: self.inner.write().unwrap() })
+    }
+
+    pub fn read(&self) -> std::sync::LockResult<std::sync::RwLockReadGuard<ValidatorStartProgress>> {
+        self.inner.read()
+    }
+}
+
 // `ValidatorStartProgress` contains status information that is surfaced to the node operator over
 // the admin RPC channel to help them to follow the general progress of node startup without
 // having to watch log messages.
@@ -387,6 +468,7 @@ pub enum ValidatorStartProgress {
     DownloadingSnapshot {
         slot: Slot,
         rpc_addr: SocketAddr,
+        progress: u8,
     },
     CleaningBlockStore,
     CleaningAccounts,
@@ -507,7 +589,7 @@ impl Validator {
         config: &ValidatorConfig,
         should_check_duplicate_instance: bool,
         rpc_to_plugin_manager_receiver: Option<Receiver<GeyserPluginManagerRequest>>,
-        start_progress: Arc<RwLock<ValidatorStartProgress>>,
+        start_progress: Arc<VSPRwLock>,
         socket_addr_space: SocketAddrSpace,
         use_quic: bool,
         tpu_connection_pool_size: usize,
@@ -2105,7 +2187,7 @@ fn load_blockstore(
     config: &ValidatorConfig,
     ledger_path: &Path,
     exit: Arc<AtomicBool>,
-    start_progress: &Arc<RwLock<ValidatorStartProgress>>,
+    start_progress: &Arc<VSPRwLock>,
     accounts_update_notifier: Option<AccountsUpdateNotifier>,
     transaction_notifier: Option<TransactionNotifierArc>,
     entry_notifier: Option<EntryNotifierArc>,
@@ -2264,7 +2346,7 @@ fn load_blockstore(
 pub struct ProcessBlockStore<'a> {
     id: &'a Pubkey,
     vote_account: &'a Pubkey,
-    start_progress: &'a Arc<RwLock<ValidatorStartProgress>>,
+    start_progress: &'a Arc<VSPRwLock>,
     blockstore: &'a Blockstore,
     original_blockstore_root: Slot,
     bank_forks: &'a Arc<RwLock<BankForks>>,
@@ -2284,7 +2366,7 @@ impl<'a> ProcessBlockStore<'a> {
     fn new(
         id: &'a Pubkey,
         vote_account: &'a Pubkey,
-        start_progress: &'a Arc<RwLock<ValidatorStartProgress>>,
+        start_progress: &'a Arc<VSPRwLock>,
         blockstore: &'a Blockstore,
         original_blockstore_root: Slot,
         bank_forks: &'a Arc<RwLock<BankForks>>,
@@ -2648,7 +2730,7 @@ fn wait_for_supermajority(
     bank_forks: &RwLock<BankForks>,
     cluster_info: &ClusterInfo,
     rpc_override_health_check: Arc<AtomicBool>,
-    start_progress: &Arc<RwLock<ValidatorStartProgress>>,
+    start_progress: &Arc<VSPRwLock>,
 ) -> Result<bool, ValidatorError> {
     match config.wait_for_supermajority {
         None => Ok(false),
