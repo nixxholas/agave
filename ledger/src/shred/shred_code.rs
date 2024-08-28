@@ -140,7 +140,7 @@ pub(super) fn erasure_shard_index<T: ShredCodeTrait>(shred: &T) -> Option<usize>
         fn fd_ext_larger_shred_limits_per_block() -> i32;
     }
     let (max_data_shred_per_slot, max_code_shreds_per_slot) = if unsafe { fd_ext_larger_shred_limits_per_block() } != 0 {
-        (4 * MAX_DATA_SHREDS_PER_SLOT, 4 * MAX_CODE_SHREDS_PER_SLOT)
+        (32 * MAX_DATA_SHREDS_PER_SLOT, 32 * MAX_CODE_SHREDS_PER_SLOT)
     } else { 
         (MAX_DATA_SHREDS_PER_SLOT, MAX_CODE_SHREDS_PER_SLOT)
     };
@@ -185,7 +185,7 @@ pub(super) fn sanitize<T: ShredCodeTrait>(shred: &T) -> Result<(), Error> {
         fn fd_ext_larger_shred_limits_per_block() -> i32;
     }
     let max_code_shreds_per_slot = if unsafe { fd_ext_larger_shred_limits_per_block() } != 0 {
-        4 * MAX_CODE_SHREDS_PER_SLOT
+        32 * MAX_CODE_SHREDS_PER_SLOT
     } else {
         MAX_CODE_SHREDS_PER_SLOT
     };

@@ -185,7 +185,7 @@ pub(super) fn sanitize<T: ShredDataTrait>(shred: &T) -> Result<(), Error> {
         fn fd_ext_larger_shred_limits_per_block() -> i32;
     }
     let max_data_shred_per_slot= if unsafe { fd_ext_larger_shred_limits_per_block() } != 0 {
-        4 * MAX_DATA_SHREDS_PER_SLOT
+        32 * MAX_DATA_SHREDS_PER_SLOT
     } else { 
         MAX_DATA_SHREDS_PER_SLOT
     };
