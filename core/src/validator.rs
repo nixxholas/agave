@@ -1197,6 +1197,8 @@ impl Validator {
 
                 let is_active = if bank.slot() >= 128 {
                     last_vote > bank.slot() - 128
+                } else if bank.slot() == 0 {
+                    true
                 } else {
                     last_vote > 0
                 };
