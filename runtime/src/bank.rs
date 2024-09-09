@@ -1028,6 +1028,8 @@ impl Bank {
         accounts_update_notifier: Option<AccountsUpdateNotifier>,
         #[allow(unused)] collector_id_for_tests: Option<Pubkey>,
         exit: Arc<AtomicBool>,
+        #[allow(unused)] genesis_hash: Option<Hash>,
+        #[allow(unused)] feature_set: Option<FeatureSet>,
     ) -> Self {
         let accounts_db = AccountsDb::new_with_config(
             paths,
@@ -1045,6 +1047,11 @@ impl Bank {
         bank.transaction_account_lock_limit = runtime_config.transaction_account_lock_limit;
         bank.transaction_debug_keys = debug_keys;
         bank.cluster_type = Some(genesis_config.cluster_type);
+
+        #[cfg(feature = "dev-context-only-utils")]
+        {
+            bank.feature_set = Arc::new(feature_set.unwrap_or_default());
+        }
 
         #[cfg(not(feature = "dev-context-only-utils"))]
         bank.process_genesis_config(genesis_config);
@@ -2031,7 +2038,7 @@ impl Bank {
         }
     }
 
-    fn update_rent(&self) {
+    pub fn update_rent(&self) {
         self.update_sysvar_account(&sysvar::rent::id(), |account| {
             create_account(
                 &self.rent_collector.rent,
@@ -2040,7 +2047,7 @@ impl Bank {
         });
     }
 
-    fn update_epoch_schedule(&self) {
+    pub fn update_epoch_schedule(&self) {
         self.update_sysvar_account(&sysvar::epoch_schedule::id(), |account| {
             create_account(
                 self.epoch_schedule(),
@@ -3187,6 +3194,24 @@ impl Bank {
             &Hash::new_unique(),
             &BankWithScheduler::no_scheduler_available(),
         )
+    }
+
+    #[cfg(feature = "dev-context-only-utils")]
+    pub fn register_recent_blockhash_for_test(
+        &self,
+        blockhash: &Hash,
+        lamports_per_signature: Option<u64>,
+    ) {
+        // Only acquire the write lock for the blockhash queue on block boundaries because
+        // readers can starve this write lock acquisition and ticks would be slowed down too
+        // much if the write lock is acquired for each tick.
+        let mut w_blockhash_queue = self.blockhash_queue.write().unwrap();
+        if let Some(lamports_per_signature) = lamports_per_signature {
+            w_blockhash_queue.register_hash(blockhash, lamports_per_signature);
+        } else {
+            w_blockhash_queue
+                .register_hash(blockhash, self.fee_rate_governor.lamports_per_signature);
+        }
     }
 
     /// Tell the bank which Entry IDs exist on the ledger. This function assumes subsequent calls
@@ -6876,6 +6901,8 @@ impl Bank {
             None,
             Some(Pubkey::new_unique()),
             Arc::default(),
+            None,
+            None,
         )
     }
 
@@ -6899,6 +6926,8 @@ impl Bank {
             None,
             Some(Pubkey::new_unique()),
             Arc::default(),
+            None,
+            None,
         )
     }
 
