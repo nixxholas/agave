@@ -5024,7 +5024,7 @@ impl Bank {
             executed_transactions_count,
             executed_non_vote_transactions_count,
             executed_with_successful_result_count,
-            executed_non_vote_with_successful_result_count: usize,
+            executed_non_vote_with_successful_result_count,
             signature_count,
             ..
         } = self.load_and_execute_transactions(
