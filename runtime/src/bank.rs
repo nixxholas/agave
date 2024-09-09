@@ -569,6 +569,7 @@ pub struct LoadAndExecuteTransactionsOutput {
     // Total number of the executed transactions that returned success/not
     // an error.
     pub executed_with_successful_result_count: usize,
+    pub executed_non_vote_with_successful_result_count: usize,
     pub signature_count: u64,
     pub error_counters: TransactionErrorMetrics,
 }
@@ -763,6 +764,7 @@ impl PartialEq for Bank {
             transaction_count,
             non_vote_transaction_count_since_restart: _,
             transaction_error_count: _,
+            non_vote_transaction_error_count: _,
             transaction_entries_count: _,
             transactions_per_entry_max: _,
             tick_height,
@@ -959,8 +961,11 @@ pub struct Bank {
     /// retained within snapshots, but is preserved in `Bank::new_from_parent`.
     non_vote_transaction_count_since_restart: AtomicU64,
 
-    /// The number of transaction errors in this slot
+    /// The number of transaction errors since boot
     transaction_error_count: AtomicU64,
+
+    /// The number of non-vote transaction errors since boot
+    non_vote_transaction_error_count: AtomicU64,
 
     /// The number of transaction entries in this slot
     transaction_entries_count: AtomicU64,
@@ -1151,6 +1156,7 @@ pub struct ExecutedTransactionCounts {
     pub executed_transactions_count: u64,
     pub executed_non_vote_transactions_count: u64,
     pub executed_with_failure_result_count: u64,
+    pub executed_non_vote_with_failure_result_count: u64,
     pub signature_count: u64,
 }
 
@@ -1170,6 +1176,7 @@ impl Bank {
             transaction_count: AtomicU64::default(),
             non_vote_transaction_count_since_restart: AtomicU64::default(),
             transaction_error_count: AtomicU64::default(),
+            non_vote_transaction_error_count: AtomicU64::default(),
             transaction_entries_count: AtomicU64::default(),
             transactions_per_entry_max: AtomicU64::default(),
             tick_height: AtomicU64::default(),
@@ -1420,6 +1427,7 @@ impl Bank {
                 parent.non_vote_transaction_count_since_restart(),
             ),
             transaction_error_count: AtomicU64::new(0),
+            non_vote_transaction_error_count: AtomicU64::new(0),
             transaction_entries_count: AtomicU64::new(0),
             transactions_per_entry_max: AtomicU64::new(0),
             // we will .clone_with_epoch() this soon after stake data update; so just .clone() for now
@@ -1805,6 +1813,7 @@ impl Bank {
             transaction_count: AtomicU64::new(fields.transaction_count),
             non_vote_transaction_count_since_restart: AtomicU64::default(),
             transaction_error_count: AtomicU64::default(),
+            non_vote_transaction_error_count: AtomicU64::default(),
             transaction_entries_count: AtomicU64::default(),
             transactions_per_entry_max: AtomicU64::default(),
             tick_height: AtomicU64::new(fields.tick_height),
@@ -3922,6 +3931,7 @@ impl Bank {
         let mut executed_transactions_count: usize = 0;
         let mut executed_non_vote_transactions_count: usize = 0;
         let mut executed_with_successful_result_count: usize = 0;
+        let mut executed_non_vote_with_successful_result_count: usize = 0;
         let err_count = &mut error_counters.total;
         let transaction_log_collector_config =
             self.transaction_log_collector_config.read().unwrap();
@@ -4012,6 +4022,9 @@ impl Bank {
             match execution_result.flattened_result() {
                 Ok(()) => {
                     executed_with_successful_result_count += 1;
+                    if !is_vote {
+                        executed_non_vote_with_successful_result_count += 1;
+                    }
                 }
                 Err(err) => {
                     if *err_count == 0 {
@@ -4040,6 +4053,7 @@ impl Bank {
             executed_transactions_count,
             executed_non_vote_transactions_count,
             executed_with_successful_result_count,
+            executed_non_vote_with_successful_result_count,
             signature_count,
             error_counters,
         }
@@ -4175,6 +4189,7 @@ impl Bank {
             executed_transactions_count,
             executed_non_vote_transactions_count,
             executed_with_failure_result_count,
+            executed_non_vote_with_failure_result_count,
             signature_count,
         } = counts;
 
@@ -4187,6 +4202,10 @@ impl Bank {
         if executed_with_failure_result_count > 0 {
             self.transaction_error_count
                 .fetch_add(executed_with_failure_result_count, Relaxed);
+        }
+        if executed_non_vote_with_failure_result_count > 0 {
+            self.non_vote_transaction_error_count
+                .fetch_add(executed_non_vote_with_failure_result_count, Relaxed);
         }
 
         // Should be equivalent to checking `executed_transactions_count > 0`
@@ -5005,6 +5024,7 @@ impl Bank {
             executed_transactions_count,
             executed_non_vote_transactions_count,
             executed_with_successful_result_count,
+            executed_non_vote_with_successful_result_count: usize,
             signature_count,
             ..
         } = self.load_and_execute_transactions(
@@ -5035,6 +5055,9 @@ impl Bank {
                 executed_non_vote_transactions_count: executed_non_vote_transactions_count as u64,
                 executed_with_failure_result_count: executed_transactions_count
                     .saturating_sub(executed_with_successful_result_count)
+                    as u64,
+                executed_non_vote_with_failure_result_count: executed_non_vote_transactions_count
+                    .saturating_sub(executed_non_vote_with_successful_result_count)
                     as u64,
                 signature_count,
             },
@@ -5570,6 +5593,10 @@ impl Bank {
 
     pub fn transaction_error_count(&self) -> u64 {
         self.transaction_error_count.load(Relaxed)
+    }
+
+    pub fn non_vote_transaction_error_count(&self) -> u64 {
+        self.non_vote_transaction_error_count.load(Relaxed)
     }
 
     pub fn transaction_entries_count(&self) -> u64 {

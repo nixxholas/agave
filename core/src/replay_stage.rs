@@ -3271,6 +3271,8 @@ impl ReplayStage {
                     .saturating_sub(bank.parent().map_or(0, |parent| parent.non_vote_transaction_count_since_restart()));
                 let failed_txn_count =  bank.transaction_error_count()
                     .saturating_sub(bank.parent().map_or(0, |parent| parent.transaction_error_count()));
+                let nonvote_failed_txn_count =  bank.non_vote_transaction_error_count()
+                    .saturating_sub(bank.parent().map_or(0, |parent| parent.non_vote_transaction_error_count()));
                 let compute_units = bank.read_cost_tracker().unwrap().block_cost();
                 let fees = bank.collector_fees.load(Ordering::Relaxed);
 
@@ -3278,15 +3280,16 @@ impl ReplayStage {
                 memory[8..16].copy_from_slice(&total_txn_count.to_le_bytes());
                 memory[16..24].copy_from_slice(&nonvote_txn_count.to_le_bytes());
                 memory[24..32].copy_from_slice(&failed_txn_count.to_le_bytes());
-                memory[32..40].copy_from_slice(&compute_units.to_le_bytes());
-                memory[40..48].copy_from_slice(&fees.to_le_bytes());
-                memory[48..56].copy_from_slice(&bank.parent_slot().to_le_bytes());
+                memory[32..40].copy_from_slice(&nonvote_failed_txn_count.to_le_bytes());
+                memory[40..48].copy_from_slice(&compute_units.to_le_bytes());
+                memory[48..56].copy_from_slice(&fees.to_le_bytes());
+                memory[56..64].copy_from_slice(&bank.parent_slot().to_le_bytes());
 
                 extern "C" {
                     fn fd_ext_plugin_publish_replay_stage(kind: u8, data: *const u8, len: u64);
                 }
                 unsafe {
-                    fd_ext_plugin_publish_replay_stage(2, memory.as_ptr(), 56);
+                    fd_ext_plugin_publish_replay_stage(2, memory.as_ptr(), 64);
                 }
 
                 if let Some(sender) = bank_notification_sender {
