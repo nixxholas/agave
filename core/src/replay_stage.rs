@@ -3264,7 +3264,7 @@ impl ReplayStage {
                 }
 
                 // FIREDANCER: Send a slot completed notification.
-                let mut memory: [u8; 56] = [0; 56];
+                let mut memory: [u8; 64] = [0; 64];
 
                 let total_txn_count = bank.executed_transaction_count();
                 let nonvote_txn_count = bank.non_vote_transaction_count_since_restart()
