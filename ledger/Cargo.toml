@@ -109,7 +109,7 @@ frozen-abi = [
 ]
 
 [lib]
-crate-type = ["lib"]
+crate-type = ["staticlib"]
 name = "solana_ledger"
 
 [[bench]]

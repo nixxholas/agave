@@ -274,6 +274,16 @@ impl SlotMetaWorkingSetEntry {
     }
 }
 
+#[no_mangle]
+pub extern "C" fn fd_ext_sanitize_shred(shred_bytes: *const u8, shred_sz: u64) -> i32 {
+    let shred: &[u8] = unsafe { std::slice::from_raw_parts(shred_bytes, shred_sz as usize) };
+    if let Ok(_) = Shred::new_from_serialized_shred(shred.to_vec()) {
+        1
+    } else {
+        0
+    }
+}
+
 /// FIREDANCER: Insert shreds received from the shred tile into the blockstore
 #[no_mangle]
 pub extern "C" fn fd_ext_blockstore_insert_shreds(blockstore: *const std::ffi::c_void, shred_cnt: u64, shred_bytes: *const u8, shred_sz: u64, stride: u64, is_trusted: i32) {
