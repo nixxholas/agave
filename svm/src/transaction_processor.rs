@@ -721,7 +721,7 @@ impl<FG: ForkGraph> TransactionBatchProcessor<FG> {
         config: &TransactionProcessingConfig,
     ) -> TransactionExecutionResult {
         let transaction_accounts = std::mem::take(&mut loaded_transaction.accounts);
-
+        
         fn transaction_accounts_lamports_sum(
             accounts: &[(Pubkey, AccountSharedData)],
             message: &SanitizedMessage,
@@ -752,7 +752,6 @@ impl<FG: ForkGraph> TransactionBatchProcessor<FG> {
             compute_budget.max_instruction_stack_depth,
             compute_budget.max_instruction_trace_length,
         );
-        #[cfg(debug_assertions)]
         transaction_context.set_signature(tx.signature());
 
         let pre_account_state_info =

@@ -4,6 +4,10 @@
 pub mod serialization;
 pub mod syscalls;
 
+use solana_rbpf::{static_analysis::Analysis};
+use solana_sdk::signature::Signature;
+use std::str::FromStr;
+
 use {
     solana_compute_budget::compute_budget::MAX_INSTRUCTION_STACK_DEPTH,
     solana_measure::measure::Measure,
@@ -1347,6 +1351,7 @@ fn execute<'a, 'b: 'a>(
     let log_collector = invoke_context.get_log_collector();
     let transaction_context = &invoke_context.transaction_context;
     let instruction_context = transaction_context.get_current_instruction_context()?;
+    let sig_array = transaction_context.get_signature().clone();
     let (program_id, is_loader_deprecated) = {
         let program_account =
             instruction_context.try_borrow_last_program_account(transaction_context)?;
@@ -1401,22 +1406,43 @@ fn execute<'a, 'b: 'a>(
         };
         create_vm_time.stop();
 
+        if sig_array == Signature::from_str("5eDHsKU97vGACkz1dqRDhaG2XgNBUofWoFaMNoRdNr72cvyVErjS4CKJhcet8RhbSLUQte6vpQU8kEn12zwDCcK9").unwrap() {             
+            log::info!("PROGRAM STARTING WITH {} CUS", compute_meter_prev);
+        }
+
         vm.context_object_pointer.execute_time = Some(Measure::start("execute"));
-        let (compute_units_consumed, result) = vm.execute_program(executable, !use_jit);
+        let (compute_units_consumed, result) = vm.execute_program(executable, true);
         MEMORY_POOL.with_borrow_mut(|memory_pool| {
             memory_pool.put_stack(stack);
             memory_pool.put_heap(heap);
             debug_assert!(memory_pool.stack_len() <= MAX_INSTRUCTION_STACK_DEPTH);
             debug_assert!(memory_pool.heap_len() <= MAX_INSTRUCTION_STACK_DEPTH);
         });
+
+
+        log::info!("signature: {}",sig_array);
+        if false && sig_array == Signature::from_str("5eDHsKU97vGACkz1dqRDhaG2XgNBUofWoFaMNoRdNr72cvyVErjS4CKJhcet8RhbSLUQte6vpQU8kEn12zwDCcK9").unwrap() {
+            let mut trace_buffer = Vec::new();
+            let analysis = Analysis::from_executable(executable).unwrap();
+            let log = vm.context_object_pointer.syscall_context
+                            .last()
+                            .unwrap()
+                            .as_ref()
+                            .unwrap()
+                            .trace_log.as_slice();
+            log::info!("Len {} Flag {}\n", log.len(), executable.get_config().enable_instruction_tracing);
+            analysis.disassemble_trace_log(&mut trace_buffer, log)?;
+            let trace_string = String::from_utf8(trace_buffer).unwrap();
+            log::info!("BPF Program Instruction Trace:\n{}", trace_string);
+        }
+
         drop(vm);
         if let Some(execute_time) = invoke_context.execute_time.as_mut() {
             execute_time.stop();
             saturating_add_assign!(invoke_context.timings.execute_us, execute_time.as_us());
         }
 
-        ic_logger_msg!(
-            log_collector,
+        log::info!(
             "Program {} consumed {} of {} compute units",
             &program_id,
             compute_units_consumed,
@@ -1524,7 +1550,7 @@ pub mod test_utils {
             invoke_context.get_feature_set(),
             invoke_context.get_compute_budget(),
             false, /* deployment */
-            false, /* debugging_features */
+            true, /* debugging_features */
         );
         let program_runtime_environment = Arc::new(program_runtime_environment.unwrap());
         let num_accounts = invoke_context.transaction_context.get_number_of_accounts();

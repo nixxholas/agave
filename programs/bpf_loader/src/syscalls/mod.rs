@@ -1,3 +1,4 @@
+use solana_sdk::bs58;
 pub use self::{
     cpi::{SyscallInvokeSignedC, SyscallInvokeSignedRust},
     logging::{
@@ -2012,7 +2013,10 @@ declare_builtin_function!(
                 hasher.hash(bytes);
             }
         }
+
         hash_result.copy_from_slice(hasher.result().as_ref());
+        let base58_encoded = bs58::encode(hash_result).into_string();
+        log::info!("RESULT OF HASH {:x} {:?}", result_addr, base58_encoded);
         Ok(0)
     }
 );
