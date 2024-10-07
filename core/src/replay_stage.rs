@@ -202,6 +202,7 @@ impl Drop for Finalizer {
 struct ReplaySlotFromBlockstore {
     is_slot_dead: bool,
     bank_slot: Slot,
+    jito_tip_balance_pre_replay: u64,
     replay_result: Option<Result<usize /* tx count */, BlockstoreProcessorError>>,
 }
 
@@ -682,6 +683,60 @@ impl ReplayStage {
                 .build()
                 .expect("new rayon threadpool");
 
+            // FIREDANCER: Calculate JITO fees by taking the account
+            // balance delta of JITO tip accounts.
+            // The JITO tip accounts are pretty stable, so we
+            // just hardcode them here.
+            /*
+            curl https://mainnet.block-engine.jito.wtf/api/v1/bundles -X POST -H "Content-Type: application/json" -d '
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "getTipAccounts",
+                "params": []
+            }
+            '
+            curl https://testnet.block-engine.jito.wtf/api/v1/bundles -X POST -H "Content-Type: application/json" -d '
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "getTipAccounts",
+                "params": []
+            }
+            '
+            */
+            const MAINNET_TIP_ACCOUNTS: [&'static str; 8] = [
+                "DfXygSm4jCyNCybVYYK6DwvWqjKee8pbDmJGcLWNDXjh",
+                "HFqU5x63VTqvQss8hp11i4wVV8bD44PvwucfZ2bU7gRe",
+                "96gYZGLnJYVFmbjzopPSU6QiEV5fGqZNyN9nmNhvrZU5",
+                "ADaUMid9yfUytqMBgopwjb2DTLSokTSzL1zt6iGPaS49",
+                "ADuUkR4vqLUMWXxW9gh6D6L8pMSawimctcNZ5pGwDcEt",
+                "DttWaMuVvTiduZRnguLF7jNxTgiMBZ1hyAumKUiL2KRL",
+                "3AVi9Tg9Uo68tJfuvoKvqKNWKkC5wPdSSdeBnizKZ6jT",
+                "Cw8CFyM9FkoMi7K7Crf6HNQqf4uEMzpKw6QNghXLvLkY",
+            ];
+            const TESTNET_TIP_ACCOUNTS: [&'static str; 8] = [
+                "4xgEmT58RwTNsF5xm2RMYCnR1EVukdK8a1i2qFjnJFu3",
+                "aTtUk2DHgLhKZRDjePq6eiHRKC1XXFMBiSUfQ2JNDbN",
+                "9ttgPBBhRYFuQccdR1DSnb7hydsWANoDsV3P9kaGMCEh",
+                "EoW3SUQap7ZeynXQ2QJ847aerhxbPVr843uMeTfc9dxM",
+                "B1mrQSpdeMU9gCvkJ6VsXVVoYjRGkNA7TtjMyqxrhecH",
+                "E2eSqe33tuhAHKTrwky5uEjaVqnb2T9ns6nHHUrN8588",
+                "9n3d1K5YD2vECAbRFhFFGYNNjiXtHXJWn9F31t89vsAV",
+                "ARTtviJkLLt6cHGQDydfo1Wyk6M4VGZdKZ2ZhdnJL336",
+            ];
+            let jito_pubkeys: Vec<_> = match working_bank.cluster_type() {
+                ClusterType::MainnetBeta => {
+                    MAINNET_TIP_ACCOUNTS.iter().map(|&a| a.parse::<Pubkey>().unwrap()).collect()
+                },
+                ClusterType::Testnet => {
+                    TESTNET_TIP_ACCOUNTS.iter().map(|&a| a.parse::<Pubkey>().unwrap()).collect()
+                },
+                _ => {
+                    Vec::new()
+                },
+            };
+
             Self::reset_poh_recorder(
                 &my_pubkey,
                 &blockstore,
@@ -746,6 +801,7 @@ impl ReplayStage {
                     &replay_tx_thread_pool,
                     &prioritization_fee_cache,
                     &mut purge_repair_slot_counter,
+                    &jito_pubkeys,
                 );
                 replay_active_banks_time.stop();
 
@@ -1094,6 +1150,28 @@ impl ReplayStage {
                         last_reset = reset_bank.last_blockhash();
                         last_reset_bank_descendants = vec![];
                         tpu_has_bank = false;
+
+                        // FIREDANCER: Send a reset chain notification
+                        let parents = reset_bank.parents();
+                        assert!(parents.len()<4096);
+
+                        let last_landed_vote: u64 = progress.my_latest_landed_vote(reset_bank.slot()).unwrap_or(Slot::MAX);
+
+                        let mut memory: [u8; 4098*8] = [0; 4098*8];
+                        memory[0..8].copy_from_slice(&last_landed_vote.to_le_bytes());
+                        memory[8..16].copy_from_slice(&parents.len().to_le_bytes());
+                        memory[16..24].copy_from_slice(&reset_bank.slot().to_le_bytes());
+
+                        for (i, parent) in parents.iter().enumerate() {
+                            memory[24 + i*8..24 + (i+1)*8].copy_from_slice(&parent.slot().to_le_bytes());
+                        }
+
+                        extern "C" {
+                            fn fd_ext_plugin_publish_replay_stage(kind: u8, data: *const u8, len: u64);
+                        }
+                        unsafe {
+                            fd_ext_plugin_publish_replay_stage(10, memory.as_ptr(), 4098*8);
+                        }
 
                         if let Some(last_voted_slot) = tower.last_voted_slot() {
                             // If the current heaviest bank is not a descendant of the last voted slot,
@@ -2427,6 +2505,17 @@ impl ReplayStage {
 
             blockstore.slots_stats.mark_rooted(new_root);
 
+            // FIREDANCER: Send a slot rooted notification.
+            let mut memory: [u8; 8] = [0; 8];
+            memory[0..8].copy_from_slice(&new_root.to_le_bytes());
+
+            extern "C" {
+                fn fd_ext_plugin_publish_replay_stage(kind: u8, data: *const u8, len: u64);
+            }
+            unsafe {
+                fd_ext_plugin_publish_replay_stage(0, memory.as_ptr(), 8);
+            }
+
             rpc_subscriptions.notify_roots(rooted_slots);
             if let Some(sender) = bank_notification_sender {
                 sender
@@ -2801,6 +2890,17 @@ impl ReplayStage {
         );
     }
 
+    fn sum_account_balance(
+        pubkeys: &[Pubkey],
+        bank: &BankWithScheduler,
+    ) -> u64 {
+        use solana_sdk::account::ReadableAccount;
+        let total_lamports = pubkeys.iter()
+            .map(|pubkey| bank.get_account(pubkey).map(|account| account.lamports()).unwrap_or(0))
+            .sum();
+        total_lamports
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn replay_active_banks_concurrently(
         blockstore: &Blockstore,
@@ -2818,6 +2918,7 @@ impl ReplayStage {
         log_messages_bytes_limit: Option<usize>,
         active_bank_slots: &[Slot],
         prioritization_fee_cache: &PrioritizationFeeCache,
+        jito_pubkeys: &[Pubkey],
     ) -> Vec<ReplaySlotFromBlockstore> {
         // Make mutable shared structures thread safe.
         let progress = RwLock::new(progress);
@@ -2832,6 +2933,7 @@ impl ReplayStage {
                     let mut replay_result = ReplaySlotFromBlockstore {
                         is_slot_dead: false,
                         bank_slot,
+                        jito_tip_balance_pre_replay: 0,
                         replay_result: None,
                     };
                     let my_pubkey = &my_pubkey.clone();
@@ -2885,6 +2987,8 @@ impl ReplayStage {
                     let replay_progress = bank_progress.replay_progress.clone();
                     drop(progress_lock);
 
+                    replay_result.jito_tip_balance_pre_replay = Self::sum_account_balance(jito_pubkeys, &bank);
+
                     if bank.collector_id() != my_pubkey {
                         let mut replay_blockstore_time =
                             Measure::start("replay_blockstore_into_bank");
@@ -2933,10 +3037,12 @@ impl ReplayStage {
         log_messages_bytes_limit: Option<usize>,
         bank_slot: Slot,
         prioritization_fee_cache: &PrioritizationFeeCache,
+        jito_pubkeys: &[Pubkey],
     ) -> ReplaySlotFromBlockstore {
         let mut replay_result = ReplaySlotFromBlockstore {
             is_slot_dead: false,
             bank_slot,
+            jito_tip_balance_pre_replay: 0,
             replay_result: None,
         };
         let my_pubkey = &my_pubkey.clone();
@@ -2974,6 +3080,8 @@ impl ReplayStage {
                     num_dropped_blocks_on_fork,
                 )
             });
+
+            replay_result.jito_tip_balance_pre_replay = Self::sum_account_balance(jito_pubkeys, &bank);
 
             if bank.collector_id() != my_pubkey {
                 let mut replay_blockstore_time = Measure::start("replay_blockstore_into_bank");
@@ -3022,6 +3130,7 @@ impl ReplayStage {
         replay_result_vec: &[ReplaySlotFromBlockstore],
         purge_repair_slot_counter: &mut PurgeRepairSlotCounter,
         my_pubkey: &Pubkey,
+        jito_pubkeys: &[Pubkey],
     ) -> bool {
         // TODO: See if processing of blockstore replay results and bank completion can be made thread safe.
         let mut did_complete_bank = false;
@@ -3226,6 +3335,39 @@ impl ReplayStage {
                         SlotStateUpdate::Duplicate(duplicate_state),
                     );
                 }
+
+                // FIREDANCER: Send a slot completed notification.
+                let mut memory: [u8; 80] = [0; 80];
+
+                let total_txn_count = bank.executed_transaction_count();
+                let nonvote_txn_count = bank.non_vote_transaction_count_since_restart()
+                    .saturating_sub(bank.parent().map_or(0, |parent| parent.non_vote_transaction_count_since_restart()));
+                let failed_txn_count =  bank.transaction_error_count();
+                let nonvote_failed_txn_count =  bank.non_vote_transaction_error_count();
+                let compute_units = bank.read_cost_tracker().unwrap().block_cost();
+                let (transaction_fee, priority_fee) = bank.calculate_transaction_and_priority_fee_details(&bank.collector_fee_details.read().unwrap());
+                let jito_tip_balance_post_replay = Self::sum_account_balance(jito_pubkeys, &bank);
+                // JITO takes a 5% commission
+                let jito_fee = jito_tip_balance_post_replay.saturating_sub(replay_result.jito_tip_balance_pre_replay) * 95 / 100;
+
+                memory[0..8].copy_from_slice(&bank.slot().to_le_bytes());
+                memory[8..16].copy_from_slice(&total_txn_count.to_le_bytes());
+                memory[16..24].copy_from_slice(&nonvote_txn_count.to_le_bytes());
+                memory[24..32].copy_from_slice(&failed_txn_count.to_le_bytes());
+                memory[32..40].copy_from_slice(&nonvote_failed_txn_count.to_le_bytes());
+                memory[40..48].copy_from_slice(&compute_units.to_le_bytes());
+                memory[48..56].copy_from_slice(&transaction_fee.to_le_bytes());
+                memory[56..64].copy_from_slice(&priority_fee.to_le_bytes());
+                memory[64..72].copy_from_slice(&jito_fee.to_le_bytes());
+                memory[72..80].copy_from_slice(&bank.parent_slot().to_le_bytes());
+
+                extern "C" {
+                    fn fd_ext_plugin_publish_replay_stage(kind: u8, data: *const u8, len: u64);
+                }
+                unsafe {
+                    fd_ext_plugin_publish_replay_stage(2, memory.as_ptr(), 80);
+                }
+
                 if let Some(sender) = bank_notification_sender {
                     sender
                         .sender
@@ -3321,6 +3463,7 @@ impl ReplayStage {
         replay_tx_thread_pool: &ThreadPool,
         prioritization_fee_cache: &PrioritizationFeeCache,
         purge_repair_slot_counter: &mut PurgeRepairSlotCounter,
+        jito_pubkeys: &[Pubkey],
     ) -> bool /* completed a bank */ {
         let active_bank_slots = bank_forks.read().unwrap().active_bank_slots();
         let num_active_banks = active_bank_slots.len();
@@ -3352,6 +3495,7 @@ impl ReplayStage {
                     log_messages_bytes_limit,
                     &active_bank_slots,
                     prioritization_fee_cache,
+                    jito_pubkeys,
                 )
             }
             ForkReplayMode::Serial | ForkReplayMode::Parallel(_) => active_bank_slots
@@ -3372,6 +3516,7 @@ impl ReplayStage {
                         log_messages_bytes_limit,
                         *bank_slot,
                         prioritization_fee_cache,
+                        jito_pubkeys,
                     )
                 })
                 .collect(),
@@ -3400,6 +3545,7 @@ impl ReplayStage {
             &replay_result_vec,
             purge_repair_slot_counter,
             my_pubkey,
+            jito_pubkeys,
         )
     }
 
