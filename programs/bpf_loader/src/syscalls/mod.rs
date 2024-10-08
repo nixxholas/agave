@@ -601,6 +601,7 @@ fn translate_slice_mut<'a, T>(
         len,
         check_aligned,
     )
+    .map_err(|_err| SyscallError::InvalidPointer.into())
 }
 fn translate_slice<'a, T>(
     memory_mapping: &MemoryMapping,
@@ -616,6 +617,7 @@ fn translate_slice<'a, T>(
         check_aligned,
     )
     .map(|value| &*value)
+    .map_err(|_err| SyscallError::InvalidPointer.into())
 }
 
 /// Take a virtual pointer to a string (points to SBF VM memory space), translate it
