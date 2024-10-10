@@ -66,7 +66,7 @@ pub extern "C" fn fd_ext_bank_release_pre_balance_info( pre_balance_info: *mut s
 }
 
 #[no_mangle]
-pub extern "C" fn fd_ext_bank_commit_txns( bank: *const std::ffi::c_void, txns: *const std::ffi::c_void, txn_count: u64, load_and_execute_output: *mut std::ffi::c_void, pre_balance_info: *mut std::ffi::c_void ) {
+pub extern "C" fn fd_ext_bank_commit_txns( bank: *const std::ffi::c_void, txns: *const std::ffi::c_void, txn_count: u64, load_and_execute_output: *mut std::ffi::c_void, pre_balance_info: *mut std::ffi::c_void, collected_fees: *mut u64 ) {
     use solana_sdk::transaction::SanitizedTransaction;
     use solana_runtime::bank::LoadAndExecuteTransactionsOutput;
     use std::borrow::Cow;
@@ -114,6 +114,7 @@ pub extern "C" fn fd_ext_bank_commit_txns( bank: *const std::ffi::c_void, txns: 
         load_and_execute_output.executed_non_vote_transactions_count,
         load_and_execute_output.executed_with_successful_result_count,
         load_and_execute_output.executed_non_vote_with_successful_result_count);
+    unsafe { *collected_fees = bank.collector_fees.load(Ordering::Relaxed) };
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
