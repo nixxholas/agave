@@ -215,6 +215,24 @@ const _CHECK_ABI: [u8; 248] = [0; std::mem::size_of::<SanitizedTransaction>()];
 
 
 #[no_mangle]
+pub extern "C" fn fd_ext_bank_load_account( bank: *const std::ffi::c_void, addr: *const u8, out_owner: *mut *const u8, out_data: *mut *const u8, out_data_sz: *mut u64 ) -> i32 {
+    let bank = bank as *const Bank;
+    unsafe { Arc::increment_strong_count(bank) };
+
+    let bank = unsafe { Arc::from_raw( bank as *const Bank ) };
+    bank.get_account( unsafe { &*(addr as *const Pubkey) } )
+        .map(|account| {
+            unsafe {
+                *out_owner = account.owner().as_ref().as_ptr() as *mut u8;
+                *out_data = account.data().as_ptr();
+                *out_data_sz = account.data().len() as u64;
+            }
+            0
+        })
+        .unwrap_or(-1)
+}
+
+#[no_mangle]
 pub extern "C" fn fd_ext_bank_verify_precompiles( bank: *const std::ffi::c_void, txn: *const std::ffi::c_void ) -> i32 {
     let txn: &SanitizedTransaction = unsafe {
         &*(txn as *const SanitizedTransaction)
@@ -6880,6 +6898,13 @@ impl Bank {
             }
         }
         false
+    }
+
+    pub fn min_slot_hashes_history(&self) -> u64 {
+        let sh = self.transaction_processor.sysvar_cache();
+        let hashes = sh.get_slot_hashes().unwrap();
+        let slice = hashes.slot_hashes();
+        slice[slice.len()-1].0
     }
 
     pub fn check_program_modification_slot(&self) -> bool {
