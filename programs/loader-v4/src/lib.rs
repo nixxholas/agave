@@ -75,7 +75,7 @@ pub fn create_program_runtime_environment_v2<'a>(
         enable_stack_frame_gaps: false,
         instruction_meter_checkpoint_distance: 10000,
         enable_instruction_meter: true,
-        enable_instruction_tracing: debugging_features,
+        enable_instruction_tracing: true,
         enable_symbol_and_section_labels: debugging_features,
         reject_broken_elfs: true,
         noop_instruction_rate: 256,

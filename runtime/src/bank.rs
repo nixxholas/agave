@@ -5102,14 +5102,14 @@ impl Bank {
                 &self.feature_set,
                 &self.compute_budget().unwrap_or_default(),
                 false, /* deployment */
-                true, /* debugging_features */
+                false, /* debugging_features */
             )
             .unwrap(),
         );
         program_cache.environments.program_runtime_v2 =
             Arc::new(create_program_runtime_environment_v2(
                 &self.compute_budget().unwrap_or_default(),
-                true, /* debugging_features */
+                false, /* debugging_features */
             ));
     }
 

@@ -298,7 +298,7 @@ pub fn create_program_runtime_environment_v1<'a>(
         enable_stack_frame_gaps: !feature_set.is_active(&bpf_account_data_direct_mapping::id()),
         instruction_meter_checkpoint_distance: 10000,
         enable_instruction_meter: true,
-        enable_instruction_tracing: debugging_features,
+        enable_instruction_tracing: true,
         enable_symbol_and_section_labels: debugging_features,
         reject_broken_elfs: reject_deployment_of_broken_elfs,
         noop_instruction_rate: 256,

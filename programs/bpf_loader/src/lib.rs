@@ -1406,7 +1406,7 @@ fn execute<'a, 'b: 'a>(
         };
         create_vm_time.stop();
 
-        if sig_array == Signature::from_str("5eDHsKU97vGACkz1dqRDhaG2XgNBUofWoFaMNoRdNr72cvyVErjS4CKJhcet8RhbSLUQte6vpQU8kEn12zwDCcK9").unwrap() {             
+        if sig_array == Signature::from_str("5eDHsKU97vGACkz1dqRDhaG2XgNBUofWoFaMNoRdNr72cvyVErjS4CKJhcet8RhbSLUQte6vpQU8kEn12zwDCcK9").unwrap() {
             log::info!("PROGRAM STARTING WITH {} CUS", compute_meter_prev);
         }
 
@@ -1421,7 +1421,7 @@ fn execute<'a, 'b: 'a>(
 
 
         log::info!("signature: {}",sig_array);
-        if false && sig_array == Signature::from_str("5eDHsKU97vGACkz1dqRDhaG2XgNBUofWoFaMNoRdNr72cvyVErjS4CKJhcet8RhbSLUQte6vpQU8kEn12zwDCcK9").unwrap() {
+        if sig_array == Signature::from_str("5eDHsKU97vGACkz1dqRDhaG2XgNBUofWoFaMNoRdNr72cvyVErjS4CKJhcet8RhbSLUQte6vpQU8kEn12zwDCcK9").unwrap() {
             let mut trace_buffer = Vec::new();
             let analysis = Analysis::from_executable(executable).unwrap();
             let log = vm.context_object_pointer.syscall_context
@@ -1550,7 +1550,7 @@ pub mod test_utils {
             invoke_context.get_feature_set(),
             invoke_context.get_compute_budget(),
             false, /* deployment */
-            true, /* debugging_features */
+            false, /* debugging_features */
         );
         let program_runtime_environment = Arc::new(program_runtime_environment.unwrap());
         let num_accounts = invoke_context.transaction_context.get_number_of_accounts();

@@ -721,7 +721,7 @@ impl<FG: ForkGraph> TransactionBatchProcessor<FG> {
         config: &TransactionProcessingConfig,
     ) -> TransactionExecutionResult {
         let transaction_accounts = std::mem::take(&mut loaded_transaction.accounts);
-        
+
         fn transaction_accounts_lamports_sum(
             accounts: &[(Pubkey, AccountSharedData)],
             message: &SanitizedMessage,

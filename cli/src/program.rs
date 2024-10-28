@@ -2837,7 +2837,7 @@ fn verify_elf(
 ) -> Result<(), Box<dyn std::error::Error>> {
     // Verify the program
     let program_runtime_environment =
-        create_program_runtime_environment_v1(&feature_set, &ComputeBudget::default(), true, true)
+        create_program_runtime_environment_v1(&feature_set, &ComputeBudget::default(), true, false)
             .unwrap();
     let executable =
         Executable::<InvokeContext>::from_elf(program_data, Arc::new(program_runtime_environment))
